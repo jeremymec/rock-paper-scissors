@@ -12,6 +12,7 @@ interface Sign {
   type: SignType;
   position: Coordinate;
   velocity: Coordinate;
+  resolvingCollision: boolean;
 }
 
 type SignType = "ROCK" | "PAPER" | "SCISSORS";
@@ -28,6 +29,7 @@ const typeToEmojiMap: { [type in SignType]: string } = {
 };
 
 let ctx: CanvasRenderingContext2D;
+let signSizeDynamic: Dimension;
 
 const setup = () => {
   const spawnWidth = CANVAS_WIDTH / 4;
@@ -50,10 +52,14 @@ const setup = () => {
     const random_x = Math.random() * (end[0] - start[0]) + start[0];
     const random_y = Math.random() * (end[1] - start[1]) + start[1];
 
-    // const random_x = 100;
-    // const random_y = 100;
+    const temp_sign: Sign = {
+      position: [random_x, random_y],
+      type: "ROCK",
+      resolvingCollision: false,
+      velocity: [0, 0]
+    }
 
-    if (checkSignCollision(random_x, random_y, signs).length >= 1) {
+    if (checkSignCollision(temp_sign, signs).length >= 1) {
       return generateSpawnPointFromRange(start, end);
     }
 
@@ -65,6 +71,7 @@ const setup = () => {
       position: generateSpawnPointFromRange(spawnOneStart, spawnOneEnd),
       type: "ROCK",
       velocity: [STARTING_VELOCITY, STARTING_VELOCITY],
+      resolvingCollision: false,
     });
   }
   for (let i = 0; i < STARTING_SIGNS[1]; i++) {
@@ -72,6 +79,7 @@ const setup = () => {
       position: generateSpawnPointFromRange(spawnTwoStart, spawnTwoEnd),
       type: "PAPER",
       velocity: [STARTING_VELOCITY, STARTING_VELOCITY],
+      resolvingCollision: false,
     });
   }
   for (let i = 0; i < STARTING_SIGNS[2]; i++) {
@@ -79,8 +87,26 @@ const setup = () => {
       position: generateSpawnPointFromRange(spawnThreeStart, spawnThreeEnd),
       type: "SCISSORS",
       velocity: [STARTING_VELOCITY, STARTING_VELOCITY],
+      resolvingCollision: false,
     });
   }
+
+  // signs.length = 0;
+  // const test: Sign[] = [
+  //   {
+  //     position: [300, 310],
+  //     type: "ROCK",
+  //     velocity: [0, 1],
+  //     resolvingCollision: false,
+  //   },
+  //   {
+  //     position: [300, 300],
+  //     type: "ROCK",
+  //     velocity: [0, -1],
+  //     resolvingCollision: false,
+  //   },
+  // ];
+  // signs.push(...test);
 };
 
 const loop = () => {
@@ -93,12 +119,18 @@ const loop = () => {
     }
 
     const collides = checkSignCollision(
-      sign.position[0],
-      sign.position[1],
+      sign,
       signs.filter((s) => s !== sign)
     );
-    for (let colidee of collides) {
-      handleSignCollision(sign, colidee);
+
+    if (collides.length > 0) {
+      for (let colidee of collides) {
+        handleSignCollision(sign, colidee);
+        colidee.resolvingCollision = true;
+      }
+      sign.resolvingCollision = true;
+    } else {
+      sign.resolvingCollision = false;
     }
 
     sign.position[0] += sign.velocity[0];
@@ -120,31 +152,57 @@ const drawSign = (sign: Sign) => {
 };
 
 const checkSignInXBounds = (sign: Sign): boolean => {
-  return sign.position[0] >= 0 && sign.position[0] + SIGN_WIDTH <= CANVAS_WIDTH;
+  return (
+    sign.position[0] >= 0 &&
+    sign.position[0] + signSizeDynamic[0] <= CANVAS_WIDTH
+  );
 };
 
 const checkSignInYBounds = (sign: Sign): boolean => {
   return (
-    sign.position[1] >= 0 && sign.position[1] + SIGN_HEIGHT <= CANVAS_HEIGHT
+    sign.position[1] >= 0 &&
+    sign.position[1] + signSizeDynamic[1] <= CANVAS_HEIGHT
   );
 };
 
-const checkSignCollision = (x: number, y: number, signs: Sign[]): Sign[] => {
-  return signs.filter((sign) => {
+const checkSignCollision = (sign: Sign, potentials: Sign[]): Sign[] => {
+  return potentials.filter((potential) => {
     return (
-      x < sign.position[0] + SIGN_WIDTH &&
-      x + SIGN_WIDTH > sign.position[0] &&
-      y < sign.position[1] + SIGN_HEIGHT &&
-      y + SIGN_HEIGHT > sign.position[1]
+      sign.position[0] < potential.position[0] + signSizeDynamic[0] &&
+      sign.position[0] + signSizeDynamic[0] > potential.position[0] &&
+      sign.position[1] < potential.position[1] + signSizeDynamic[1] &&
+      sign.position[1] + signSizeDynamic[1] > potential.position[1]
     );
   });
 };
 
-const handleSignCollision = (first: Sign, second: Sign) => {
+const handleSignCollision = (first: Sign, second: Sign): void => {
+  if (first.resolvingCollision && second.resolvingCollision) {
+    if (coordinateEqual(first.velocity, second.velocity)) {
+      invertVelocity([first]);
+    }
+    return;
+  }
+  else if (first.resolvingCollision || second.resolvingCollision) { 
+    return;
+   }
   const result = rockPaperScissors(first.type, second.type);
-  console.log(result);
   first.type = result;
   second.type = result;
+  invertVelocity([first, second]);
+  console.log(
+    `Collision between ${JSON.stringify(first)} and ${JSON.stringify(second)}`
+  );
+};
+
+const coordinateEqual = (first: Coordinate, second: Coordinate): boolean => {
+  return first[0] === second[0] && first[1] === second[1]
+}
+
+const invertVelocity = (signs: Sign[]): void => {
+  for (let sign of signs) {
+    sign.velocity = [-sign.velocity[0], -sign.velocity[1]];
+  }
 };
 
 const rockPaperScissors = (first: SignType, second: SignType): SignType => {
@@ -178,10 +236,15 @@ const rockPaperScissors = (first: SignType, second: SignType): SignType => {
 };
 
 window.onload = () => {
-  const canvas = document.getElementById("canvas") as HTMLCanvasElement;
-  ctx = canvas.getContext("2d");
+  const canvasElement = document.createElement("canvas");
+  canvasElement.width = CANVAS_WIDTH;
+  canvasElement.height = CANVAS_HEIGHT;
+  document.body.appendChild(canvasElement);
+  ctx = canvasElement.getContext("2d");
 
   ctx.font = "30px Arial";
+
+  signSizeDynamic = [ctx.measureText("🪨").width, ctx.measureText("🪨").width];
 
   setup();
 
