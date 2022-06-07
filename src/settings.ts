@@ -1,6 +1,6 @@
 type signAmounts = [rocks: number, papers: number, scissors: number]
 
-const STARTING_SIGNS: signAmounts = [10, 3, 3];
+const STARTING_SIGNS: signAmounts = [30, 10, 10];
 
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 800;
